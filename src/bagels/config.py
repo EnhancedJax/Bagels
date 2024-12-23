@@ -114,7 +114,7 @@ class Config(YamlBaseSettings):
         )
 
 
-CONFIG = None
+CONFIG = Config()
 
 
 def load_config():

@@ -82,6 +82,7 @@ def test_get_start_end_of_year():
 def test_get_start_end_of_month():
     """Test month period calculations."""
     # Current month
+    
     start, end = utils._get_start_end_of_month(0)
     assert start == datetime(2024, 2, 1, 0, 0, 0)
     assert end == datetime(2024, 2, 29, 23, 59, 59)  # 2024 is a leap year
@@ -101,6 +102,7 @@ def test_get_start_end_of_week():
     """Test week period calculations."""
     # Set first day of week to Monday (0)
     CONFIG.defaults.first_day_of_week = 0
+
     
     # Current week
     start, end = utils._get_start_end_of_week(0)
@@ -149,7 +151,7 @@ def test_get_start_end_of_period():
     assert end == datetime(2024, 2, 29, 23, 59, 59)
     
     # Test week
-    CONFIG.defaults.first_day_of_week = 0  # Monday
+    CONFIG.defaults.first_day_of_week = 0
     start, end = utils.get_start_end_of_period(0, "week")
     assert start == datetime(2024, 2, 12, 0, 0, 0)
     assert end == datetime(2024, 2, 18, 23, 59, 59)
