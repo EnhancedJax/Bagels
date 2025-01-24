@@ -73,7 +73,6 @@ uv tool upgrade bagels
 ```sh
 git clone https://github.com/EnhancedJax/Bagels.git
 cd Bagels
-uv sync
 uv run pre-commit install
 mkdir instance
 uv run bagels --at "./instance/" # runs app with storage in ./instance/
