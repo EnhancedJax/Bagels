@@ -121,7 +121,7 @@ class Config(BaseModel):
         )
 
 
-CONFIG = None
+CONFIG = Config()
 
 
 def load_config():
