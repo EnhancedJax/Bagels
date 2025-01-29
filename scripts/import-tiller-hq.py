@@ -1,4 +1,8 @@
+"""Import from TillerHQ CSV to Bagels database.
 
+Can be using uv like:
+uv run scripts/import-tiller-hq.py
+"""
 # /// script
 # dependencies = [
 #   "bagels",
