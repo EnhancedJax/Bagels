@@ -17,7 +17,7 @@ class Manager(Static):
 
     BINDINGS = [
         Binding("left", "dec_offset", "Shift back", show=True),
-        Binding("right", "inc_offset", "Shfit front", show=True),
+        Binding("right", "inc_offset", "Shift front", show=True),
     ]
 
     def __init__(self, *args, **kwargs) -> None:
