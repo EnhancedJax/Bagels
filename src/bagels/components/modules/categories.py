@@ -164,8 +164,12 @@ class Categories(Static):
                     )
                 self.rebuild()
 
+        category = get_category_by_id(self.current_row)
+
         self.app.push_screen(
-            ConfirmationModal("Are you sure you want to delete this record?"),
+            ConfirmationModal(
+                f"Are you sure you want to delete category '[{category.color}]●[/{category.color}] {category.name}'?"
+            ),
             check_delete,
         )
 

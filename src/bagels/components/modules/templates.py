@@ -236,9 +236,13 @@ class Templates(Static):
                 self.selected_template_id = None
                 self.rebuild()
 
+        template = get_template_by_id(self.selected_template_id)
+
         # ----------------- - ---------------- #
         self.app.push_screen(
-            ConfirmationModal("Are you sure you want to delete this template?"),
+            ConfirmationModal(
+                f"Are you sure you want to delete template '{template.label}'?"
+            ),
             check_delete,
         )
 

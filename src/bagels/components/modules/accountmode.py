@@ -188,6 +188,7 @@ class AccountMode(ScrollableContainer):
 
     def action_delete(self) -> None:
         id = self.page_parent.mode["accountId"]["default_value"]
+        name = self.page_parent.mode["accountId"]["default_value_text"]
 
         def check_delete(result) -> None:
             if result:
@@ -202,7 +203,9 @@ class AccountMode(ScrollableContainer):
 
         if id:
             self.app.push_screen(
-                ConfirmationModal("Are you sure you want to archive this account?"),
+                ConfirmationModal(
+                    f"Are you sure you want to archive account '{name}'?"
+                ),
                 check_delete,
             )
         else:

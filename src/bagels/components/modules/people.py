@@ -8,6 +8,7 @@ from bagels.config import CONFIG
 from bagels.forms.person_forms import PersonForm
 from bagels.managers.persons import (
     delete_person,
+    get_person_by_id,
     get_persons_with_net_due,
     update_person,
 )
@@ -89,9 +90,11 @@ class People(Static):
                     )
                 self.rebuild()
 
+        person = get_person_by_id(self.current_row)
+
         self.app.push_screen(
             ConfirmationModal(
-                "Are you sure you want to delete this person? Existing records with this person will not be affected."
+                f"Are you sure you want to delete person '{person.name}'? Existing records with this person will not be affected."
             ),
             check_delete,
         )
