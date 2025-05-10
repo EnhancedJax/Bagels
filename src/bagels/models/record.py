@@ -54,3 +54,29 @@ class Record(Base):
     splits = relationship(
         "Split", back_populates="record", cascade="all, delete-orphan"
     )
+
+
+import csv
+
+
+def export_to_csv(filepath="bagels_export.csv", session=None):
+    if session is None:
+        raise ValueError("A valid SQLAlchemy session must be provided.")
+
+    # get recorcds from the database
+    records = session.query(Record).all()
+
+    with open(filepath, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Date", "Label", "Amount", "Category", "Account"])
+
+        for r in records:
+            writer.writerow(
+                [
+                    r.date.strftime("%Y-%m-%d"),
+                    r.label,
+                    r.amount,
+                    r.category.name if r.category else "Uncategorized",
+                    r.account.name if r.account else "Unknown",
+                ]
+            )
