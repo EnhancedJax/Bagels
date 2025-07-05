@@ -87,7 +87,7 @@ class Field(Static):
         if not category:
             return
         self.autocomplete_postfix_display_label.update(
-            f"[{category.parentCategory.color if category.parentCategory else category.color}]{postfix_display}[/]"
+            f"[{(category.parentCategory or category).color}]{postfix_display}[/]"
         )
 
     def on_auto_complete_selected(self, event: AutoComplete.Selected) -> None:
