@@ -240,6 +240,11 @@ def load_config():
         raise SystemExit(1)
 
 
+def load_default_config():
+    global CONFIG
+    CONFIG = Config.get_default()
+
+
 def write_state(key: str, value: Any) -> None:
     """Write a state value to the config.yaml file, supporting nested keys with dot operator."""
     try:

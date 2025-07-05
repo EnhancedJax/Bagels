@@ -20,6 +20,13 @@ db_engine = create_engine(f"sqlite:///{database_file().resolve()}")
 Session = sessionmaker(bind=db_engine)
 
 
+def set_example_mode():
+    """Switch the DB engine and session to use an in-memory SQLite DB."""
+    global db_engine, Session
+    db_engine = create_engine("sqlite:///:memory:")
+    Session = sessionmaker(bind=db_engine)
+
+
 def _create_outside_source_account(session):
     outside_account = session.query(Account).filter_by(name="Outside source").first()
     if not outside_account:

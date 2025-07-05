@@ -30,8 +30,19 @@ from bagels.versioning import get_current_version, get_pypi_version, needs_updat
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     help="Path to source database file for migration.",
 )
+@click.option(
+    "--example",
+    is_flag=True,
+    help="Run Bagels in example mode with a fresh in-memory database and default config.",
+)
 @click.pass_context
-def cli(ctx, at: Path | None, migrate: str | None, source: Path | None):
+def cli(
+    ctx,
+    at: Path | None,
+    migrate: str | None,
+    source: Path | None,
+    example: bool = False,
+):
     """Bagels CLI."""
     if at:
         set_custom_root(at)
@@ -60,54 +71,81 @@ def cli(ctx, at: Path | None, migrate: str | None, source: Path | None):
                 click.echo(click.style(f"Migration failed: {str(e)}", fg="red"))
                 ctx.exit(1)
 
-    if ctx.invoked_subcommand is None:
-        with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeRemainingColumn(),
-            transient=True,
-        ) as progress:
-            task = progress.add_task(f"Loading configuration from '{at}'...", total=3)
+    if ctx.invoked_subcommand is None:  # if no subcommand is provided, run the app
+        if not example:
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeRemainingColumn(),
+                transient=True,
+            ) as progress:
+                task = progress.add_task(
+                    f"Loading configuration from '{at}'...", total=3
+                )
 
-            from bagels.config import load_config
+                from bagels.config import load_config
 
-            load_config()
+                load_config()
 
-            from bagels.config import CONFIG
+                from bagels.config import CONFIG
 
-            if CONFIG.state.check_for_updates:
-                progress.update(task, advance=1, description="Checking for updates...")
-
-                if needs_update():
-                    new = get_pypi_version()
-                    cur = get_current_version()
-                    click.echo(
-                        click.style(
-                            f"New version available ({cur} -> {new})! Update with:",
-                            fg="yellow",
-                        )
+                if CONFIG.state.check_for_updates:
+                    progress.update(
+                        task, advance=1, description="Checking for updates..."
                     )
-                    click.echo(click.style("```uv tool upgrade bagels```", fg="cyan"))
-                    click.echo(
-                        click.style(
-                            "You can disable this check in-app using the command palette.",
-                            fg="bright_black",
+
+                    if needs_update():
+                        new = get_pypi_version()
+                        cur = get_current_version()
+                        click.echo(
+                            click.style(
+                                f"New version available ({cur} -> {new})! Update with:",
+                                fg="yellow",
+                            )
                         )
-                    )
-                    sleep(2)
+                        click.echo(
+                            click.style("```uv tool upgrade bagels```", fg="cyan")
+                        )
+                        click.echo(
+                            click.style(
+                                "You can disable this check in-app using the command palette.",
+                                fg="bright_black",
+                            )
+                        )
+                        sleep(2)
 
-            progress.update(task, advance=1, description="Initializing database...")
+                progress.update(task, advance=1, description="Initializing database...")
 
-            from bagels.models.database.app import init_db
+                from bagels.models.database.app import init_db
 
+                init_db()
+                progress.update(task, advance=1, description="Starting application...")
+
+                from bagels.app import App
+
+                app = App()
+                progress.update(task, advance=1)
+
+        else:
+            click.echo(
+                click.style(
+                    "Running in EXAMPLE mode: using in-memory DB and default config.",
+                    fg="yellow",
+                )
+            )
+            from bagels.models.database.app import init_db, set_example_mode
+
+            set_example_mode()
             init_db()
-            progress.update(task, advance=1, description="Starting application...")
+
+            from bagels.config import load_default_config
+
+            load_default_config()
 
             from bagels.app import App
 
             app = App()
-            progress.update(task, advance=1)
 
         app.run()
 
