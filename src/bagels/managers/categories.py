@@ -17,7 +17,7 @@ def get_categories_count():
     """Count all categories excluding deleted ones."""
     session = Session()
     try:
-        stmt = select(Category)
+        stmt = select(Category).filter(Category.deletedAt.is_(None))
         return len(session.scalars(stmt).all())
     finally:
         session.close()

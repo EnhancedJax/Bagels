@@ -77,6 +77,8 @@ dev-dependencies = [
     "time-machine==2.16.0",
     "ruff>=0.9.1",
     "pre-commit>=4.0.1",
+    "freezegun>=1.5.1",
+    "pytest-mock>=3.14.0",
 ]
 
 [tool.hatch.metadata]
