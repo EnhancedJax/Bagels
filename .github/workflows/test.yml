@@ -1,0 +1,62 @@
+name: Run Tests and Coverage
+
+on:
+  pull_request:
+    branches: [ "main", "merged-tests" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Set up Python 3.11
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Install uv (Python package manager)
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      # 4. Install project dependencies
+      - name: Install dependencies with uv
+        run: uv sync
+
+      # 5. Run tests with coverage
+      - name: Run selected tests with coverage
+        run: |
+          # Ensure the coverage folder exists
+          mkdir -p coverage
+          
+          # Set PYTHONPATH for src folder
+          export PYTHONPATH=src
+          
+          # Run pytest on selected test files with coverage
+          uv run pytest \
+            tests/utils/test_validation.py \
+            tests/test_config.py \
+            tests/components/modules/test_incomemode.py \
+            tests/managers/test_person.py \
+            tests/modules/test_people.py \
+            --cov=bagels.config \
+            --cov=bagels.utils.validation \
+            --cov=bagels.components.modules.incomemode \
+            --cov=bagels.components.modules.people \
+            --cov=bagels.managers.persons \
+            --cov-report=term \
+            --cov-report=lcov:coverage/lcov.info
+
+
+      # 6. Verify coverage meets minimum threshold
+      - name: Verify coverage is >= 30%
+        uses: VeryGoodOpenSource/very_good_coverage@v2
+        with:
+          path: coverage/lcov.info
+          min_coverage: 30

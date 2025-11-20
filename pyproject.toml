@@ -71,12 +71,16 @@ dev-dependencies = [
     "pytest>=8.3.1",
     "jinja2>=3.1.4",
     "syrupy>=4.6.1",
+    "pytest-mock>=3.14.0",
     "pytest-xdist>=3.6.1",
     "pytest-cov>=5.0.0",
     "pytest-textual-snapshot==1.0.0",
     "time-machine==2.16.0",
     "ruff>=0.9.1",
     "pre-commit>=4.0.1",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "freezegun>=1.2"
 ]
 
 [tool.hatch.metadata]
@@ -86,6 +90,18 @@ allow-direct-references = true
 packages = ["src/bagels"]
 
 [tool.pytest.ini_options]
+addopts = "-v --cov=bagels --cov-report=term-missing"
+testpaths = [
+    "tests/utils/test_validation.py",
+    "tests/test_config.py",
+    "tests/components/modules/test_incomemode.py",
+    "tests/managers/test_person.py",
+    "tests/modules/test_people.py"
+
+]
+python_files = ["test_*.py"]
+python_classes = ["Test*", "*Tests"]
+python_functions = ["test_*"]
 markers = [
     "serial",  # used to indicate tests must not run in parallel
 ]

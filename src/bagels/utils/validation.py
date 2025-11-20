@@ -7,34 +7,41 @@ from bagels.forms.form import Form, FormField
 from bagels.utils.format import parse_formula_expression
 
 
+# ---------------------------------------------------------------
+# Custom Exceptions
+# ---------------------------------------------------------------
+class InvalidFormDataException(Exception):
+    """Raised when a form field contains invalid or inconsistent data."""
+    pass
+
+
+class AutocompleteOptionMismatchException(Exception):
+    """Raised when a value does not match the expected autocomplete options."""
+    pass
+
+
+# ---------------------------------------------------------------
+# Validation Helpers  - Added Custom Exception Handeling
+# ---------------------------------------------------------------
 def _validate_number(
     value: str, field: FormField, is_float: bool = False
-) -> Tuple[bool, str | None]:
-    """Validate a number field and return (is_valid, error_message)"""
+) -> Tuple[bool, str | None, Any]:
+    """Validate a number field and return (is_valid, error_message, numeric_value)"""
     if not value:
         if field.is_required:
-            return False, "Required", None
-        return True, None, value
+            raise InvalidFormDataException(f"Field '{field.key}' is required")
+        return True, None, None
 
-    # Skip checking if numbers are valid as they are restricted
+    try:
+        num_val = float(value) if is_float else int(value)
+    except ValueError:
+        raise InvalidFormDataException(f"Invalid numeric input: {value}")
 
-    # Convert to number for comparisons
-    if not is_float:
-        num_val = int(value)
-    else:
-        num_val = parse_formula_expression(value)
+    if field.min is not None and num_val <= (float(field.min) if is_float else int(field.min)):
+        raise InvalidFormDataException(f"Value must be greater than {field.min}")
 
-    # Check minimum
-    if field.min is not None:
-        min_val = float(field.min) if is_float else int(field.min)
-        if num_val <= min_val:
-            return False, f"Must be greater than {field.min}", None
-
-    # Check maximum
-    if field.max is not None:
-        max_val = float(field.max) if is_float else int(field.max)
-        if num_val > max_val:
-            return False, f"Must be less than {field.max}", None
+    if field.max is not None and num_val > (float(field.max) if is_float else int(field.max)):
+        raise InvalidFormDataException(f"Value must be less than {field.max}")
 
     return True, None, num_val
 
@@ -45,12 +52,11 @@ def _validate_date(
     """Validate a date field and return (parsed_date, error_message)"""
     if not value or value == "":
         if field.is_required:
-            return None, "Required"
+            raise InvalidFormDataException(f"Field '{field.key}' is required")
         return None, None
 
     try:
         if auto_day and value.isdigit():
-            # Use current month/year if not provided
             this_month = datetime.now().strftime("%m")
             this_year = datetime.now().strftime("%y")
             date = datetime.strptime(f"{value} {this_month} {this_year}", "%d %m %y")
@@ -58,8 +64,8 @@ def _validate_date(
         date = datetime.strptime(value, "%d %m %y")
         return date, None
     except ValueError:
-        format_str = "dd (mm) (yy) format." if auto_day else "dd mm yy format"
-        return None, f"Must be in {format_str}"
+        format_str = "dd (mm) (yy) format" if auto_day else "dd mm yy format"
+        raise InvalidFormDataException(f"Invalid date format for field '{field.key}'; must be in {format_str}")
 
 
 def _validate_autocomplete(
@@ -68,38 +74,40 @@ def _validate_autocomplete(
     """Validate an autocomplete field and return (is_valid, error_message)"""
     if not value and not held_value:
         if field.is_required:
-            return False, "Must be selected"
+            raise AutocompleteOptionMismatchException(f"Field '{field.key}' requires a selection")
         return True, None
 
     if not field.options or not field.options.items:
         return True, None
 
     if field.options.items[0].text:
-        # Checks if selected option but user modified input text
-        # Find all options with matching text
         matching_items = [item for item in field.options.items if item.text == value]
         if not matching_items:
-            # Entered text does not match any option
-            return False, "Invalid selection"
-        # Check if any of them have the held_value
+            raise AutocompleteOptionMismatchException(f"Invalid selection for field '{field.key}'")
         if any(str(item.value) == str(held_value) for item in matching_items):
             return True, None
         else:
-            # Entered text is not tabbed (selected) or editted a tabbed option
-            # Even if entered text matches an item, if it is not tabbed, it is invalid
-            return False, "Invalid selection"
+            raise AutocompleteOptionMismatchException(f"Invalid selection (not tabbed) for field '{field.key}'")
     else:
-        # if can't find the held_value inside the values, it's invalid
-        print(held_value)
         if held_value not in [str(item.value) for item in field.options.items]:
-            return False, "Invalid selection"
+            raise AutocompleteOptionMismatchException(f"Invalid selection for field '{field.key}'")
 
     return True, None
 
 
+# ---------------------------------------------------------------
+# Main Validation Function - Added Custom Exception Handeling
+# ---------------------------------------------------------------
 def validateForm(
     formComponent: Widget, formData: Form
 ) -> Tuple[Dict[str, Any], Dict[str, str], bool]:
+    """
+    Validates all fields in a form.
+    Returns:
+        result: dictionary of field_key -> parsed value
+        errors: dictionary of field_key -> error message
+        isValid: True if all fields are valid
+    """
     result = {}
     errors = {}
     isValid = True
@@ -113,54 +121,45 @@ def validateForm(
             else fieldWidget.value
         )
 
-        error = None
+        try:
+            match field.type:
+                case "integer":
+                    _, _, num_val = _validate_number(fieldValue, field)
+                    if num_val is not None:
+                        result[fieldKey] = num_val
 
-        # print(f"Validating {fieldKey} with value {fieldValue}")
+                case "number":
+                    _, _, num_val = _validate_number(fieldValue, field, is_float=True)
+                    if num_val is not None:
+                        result[fieldKey] = num_val
 
-        match field.type:
-            case "integer":
-                is_valid, error, num_val = _validate_number(fieldValue, field)
-                if is_valid and fieldValue is not None and num_val is not None:
-                    result[fieldKey] = num_val
+                case "date":
+                    date, _ = _validate_date(fieldValue, field)
+                    if date:
+                        result[fieldKey] = date
 
-            case "number":
-                is_valid, error, num_val = _validate_number(
-                    fieldValue, field, is_float=True
-                )
-                if is_valid and fieldValue is not None and num_val is not None:
-                    result[fieldKey] = num_val
+                case "dateAutoDay":
+                    date, _ = _validate_date(fieldValue, field, auto_day=True)
+                    if date:
+                        result[fieldKey] = date
 
-            case "date":
-                date, error = _validate_date(fieldValue, field)
-                if date:
-                    result[fieldKey] = date
-
-            case "dateAutoDay":
-                date, error = _validate_date(fieldValue, field, auto_day=True)
-                if date:
-                    result[fieldKey] = date
-
-            case "autocomplete":
-                if field.autocomplete_selector:
-                    is_valid, error = _validate_autocomplete(
-                        fieldWidget.value, fieldValue, field
-                    )
-                    if is_valid and fieldValue:
-                        result[fieldKey] = fieldValue
-                else:
-                    if not fieldWidget.value and field.is_required:
-                        error = "Required"
+                case "autocomplete":
+                    if field.autocomplete_selector:
+                        _validate_autocomplete(fieldWidget.value, fieldValue, field)
+                        if fieldValue:
+                            result[fieldKey] = fieldValue
                     else:
+                        if not fieldWidget.value and field.is_required:
+                            raise InvalidFormDataException(f"Field '{field.key}' is required")
                         result[fieldKey] = fieldWidget.value
 
-            case _:
-                if not fieldValue and field.is_required:
-                    error = "Required"
-                else:
+                case _:
+                    if not fieldValue and field.is_required:
+                        raise InvalidFormDataException(f"Field '{field.key}' is required")
                     result[fieldKey] = fieldValue
 
-        if error:
-            errors[fieldKey] = error
+        except (InvalidFormDataException, AutocompleteOptionMismatchException) as e:
+            errors[fieldKey] = str(e)
             isValid = False
 
     return result, errors, isValid
