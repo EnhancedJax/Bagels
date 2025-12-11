@@ -132,7 +132,7 @@ uv run textual run --dev "./src/bagels/textualrun.py"
 uv run textual console -x SYSTEM -x EVENT -x DEBUG -x INFO # for logging
 ```
 
-Please use the black formatter to format the code.
+Please use the white formatter to format the code.
 
 ## 🗺️ Roadmap
 
