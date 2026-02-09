@@ -1,6 +1,7 @@
 REPO_NAME = "bagels"
 REPO_OWNER = "EnhancedJax"
 REPO_URL = f"https://github.com/{REPO_OWNER}/{REPO_NAME}"
+OUTSIDE_SOURCE_ACCOUNT_NAME = "Outside source"
 COLORS = [
     "black",
     "red",

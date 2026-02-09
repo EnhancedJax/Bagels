@@ -7,6 +7,7 @@ from textual.widgets import Label, ListItem, ListView, Static
 from bagels.components.indicators import EmptyIndicator
 from bagels.config import CONFIG
 from bagels.forms.account_forms import AccountForm
+from bagels.managers.currency import get_main_currency
 from bagels.managers.accounts import (
     create_account,
     delete_account,
@@ -15,16 +16,18 @@ from bagels.managers.accounts import (
 )
 from bagels.modals.confirmation import ConfirmationModal
 from bagels.modals.input import InputModal
+from bagels.utils.money import format_account_balance, format_account_name, format_amount
 
 
 class AccountsList(ListView):
     def __init__(self, accounts, *args, **kwargs):
+        main_currency = get_main_currency()
         super().__init__(
             *[
                 ListItem(
                     Container(
                         Label(
-                            str(account.name),
+                            format_account_name(account),
                             classes="name",
                             id=f"account-{account.id}-name",
                         ),
@@ -36,7 +39,7 @@ class AccountsList(ListView):
                         classes="left-container",
                     ),
                     Label(
-                        str(account.balance),
+                        format_account_balance(account, main_currency),
                         classes="balance",
                         id=f"account-{account.id}-balance",
                     ),
@@ -79,14 +82,15 @@ class AccountMode(ScrollableContainer):
 
     def rebuild(self) -> None:
         net_balance = 0
+        main_currency = get_main_currency()
         for account in get_all_accounts_with_balance():
-            net_balance += account.balance
+            net_balance += account.balance_main
             test_mounted = self.query(f"#account-{account.id}-container")
             if len(test_mounted) == 0:
                 continue
             # Update balance
             self.query_one(f"#account-{account.id}-balance").update(
-                str(account.balance)
+                format_account_balance(account, main_currency)
             )
 
             # Update account container classes
@@ -100,7 +104,7 @@ class AccountMode(ScrollableContainer):
 
             # Update name/description label
             name_label = self.query_one(f"#account-{account.id}-name")
-            name_label.update(account.name)
+            name_label.update(format_account_name(account))
             description_label: Label = self.query_one(
                 f"#account-{account.id}-description"
             )
@@ -116,7 +120,7 @@ class AccountMode(ScrollableContainer):
 
         super().__setattr__(
             "border_title",
-            f"Accounts @= {round(net_balance, CONFIG.defaults.round_decimals)}",
+            f"Accounts @= {format_amount(net_balance, main_currency)}",
         )
 
     # region Callbacks

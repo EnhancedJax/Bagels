@@ -7,7 +7,10 @@ from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.types import IgnoreReturnCallbackType
 
 from bagels.config import CONFIG, write_state
+from bagels.currencies import get_currency_items
 from bagels.locations import config_file
+from bagels.managers.accounts import get_all_accounts
+from bagels.managers.currency import warm_rates_for_currencies
 from bagels.managers.samples import create_sample_entries
 from bagels.models.database.app import wipe_database
 
@@ -43,6 +46,12 @@ class AppProvider(Provider):
                 True,
             ),
             (
+                "config: refresh exchange rates",
+                self._action_refresh_exchange_rates,
+                "Fetch and cache latest exchange rates for all account currencies",
+                True,
+            ),
+            (
                 "dev: create sample entries",
                 self._action_create_sample_entries,
                 "Create sample entries defined in static/sample_entries.yaml",
@@ -55,6 +64,7 @@ class AppProvider(Provider):
                 False,
             ),
             *self.get_theme_commands(),
+            *self.get_currency_commands(),
         ]
 
         return tuple(commands_to_show)
@@ -108,6 +118,21 @@ class AppProvider(Provider):
             True,
         )
 
+    def get_currency_commands(
+        self,
+    ) -> tuple[tuple[str, IgnoreReturnCallbackType, str, bool], ...]:
+        return tuple(self.get_currency_command(code) for code, _ in get_currency_items())
+
+    def get_currency_command(
+        self, currency_code: str
+    ) -> tuple[str, IgnoreReturnCallbackType, str, bool]:
+        return (
+            f"currency: set main {currency_code}",
+            partial(self._action_set_main_currency, currency_code),
+            f"Set main currency to {currency_code}",
+            True,
+        )
+
     @property
     def app(self) -> "App":
         return cast("App", self.screen.app)
@@ -156,3 +181,16 @@ class AppProvider(Provider):
         write_state("footer_visibility", not cur)
         self.app.refresh(layout=True, recompose=True)
         self.app.notify(f"Footer {'enabled' if not cur else 'disabled'}")
+
+    def _action_set_main_currency(self, currency_code: str) -> None:
+        write_state("currency.main_currency", currency_code)
+        self.app.refresh(layout=True, recompose=True)
+        self.app.notify(f"Main currency set to {currency_code}")
+
+    def _action_refresh_exchange_rates(self) -> None:
+        accounts = get_all_accounts(get_hidden=True)
+        warm_rates_for_currencies(
+            currencies=[getattr(account, "currencyCode", None) for account in accounts],
+            target_currency=CONFIG.state.currency.main_currency,
+        )
+        self.app.notify("Exchange rates refreshed", timeout=2)

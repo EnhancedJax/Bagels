@@ -1,10 +1,12 @@
 import copy
 from rich.text import Text
 
+from bagels.managers.currency import get_main_currency
 from bagels.managers.accounts import get_all_accounts_with_balance
 from bagels.managers.categories import get_all_categories_by_freq
 from bagels.managers.record_templates import get_template_by_id
 from bagels.forms.form import Form, FormField, Option, Options
+from bagels.utils.money import format_account_balance
 
 
 class RecordTemplateForm:
@@ -69,12 +71,16 @@ class RecordTemplateForm:
 
     def _populate_form_options(self):
         accounts = get_all_accounts_with_balance()
+        main_currency = get_main_currency()
         self.FORM.fields[3].options = Options(
             items=[
                 Option(
                     text=account.name,
                     value=account.id,
-                    postfix=Text(f"{account.balance}", style="yellow"),
+                    postfix=Text(
+                        format_account_balance(account, main_currency),
+                        style="yellow",
+                    ),
                 )
                 for account in accounts
             ]

@@ -27,7 +27,9 @@ class Templates(Static):
     BINDINGS = [
         Binding(CONFIG.hotkeys.new, "new_template", "New"),
         Binding(
-            CONFIG.hotkeys.home.new_transfer, "new_transfer", "New Transfer Template"
+            CONFIG.hotkeys.home.new_transfer,
+            "new_transfer",
+            "New Transfer/Exchange Template",
         ),
         Binding(CONFIG.hotkeys.edit, "edit_template", "Edit"),
         Binding(CONFIG.hotkeys.delete, "delete_template", "Delete"),
@@ -171,7 +173,7 @@ class Templates(Static):
                 self.rebuild()
 
         self.app.push_screen(
-            TransferModal(title="New Transfer Template", isTemplate=True),
+            TransferModal(title="New Transfer/Exchange Template", isTemplate=True),
             callback=check_result,
         )
 
@@ -203,7 +205,7 @@ class Templates(Static):
         if template.isTransfer:
             self.app.push_screen(
                 TransferModal(
-                    title="Edit Transfer Template",
+                    title="Edit Transfer/Exchange Template",
                     record=template,
                     isTemplate=True,
                 ),

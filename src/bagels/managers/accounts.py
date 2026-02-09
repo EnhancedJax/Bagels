@@ -4,6 +4,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from bagels.config import CONFIG
+from bagels.currencies import normalize_currency_code
+from bagels.managers.currency import (
+    convert_account_amount,
+    get_account_currency,
+    get_main_currency,
+)
 from bagels.models.account import Account
 from bagels.models.database.app import db_engine
 from bagels.models.record import Record
@@ -12,13 +18,26 @@ from bagels.models.split import Split
 Session = sessionmaker(bind=db_engine)
 
 
+def _round_decimals() -> int:
+    return CONFIG.defaults.round_decimals if CONFIG is not None else 2
+
+
+def _normalize_account_payload(data: dict, include_default: bool = True) -> dict:
+    payload = dict(data)
+    if "currencyCode" in payload or include_default:
+        payload["currencyCode"] = normalize_currency_code(
+            payload.get("currencyCode"), fallback=get_main_currency()
+        )
+    return payload
+
+
 # region Create
 
 
 def create_account(data):
     session = Session()
     try:
-        new_account = Account(**data)
+        new_account = Account(**_normalize_account_payload(data, include_default=True))
         session.add(new_account)
         session.commit()
         session.refresh(new_account)
@@ -82,7 +101,12 @@ def get_account_balance(accountId, session=None):
 
         # Add transfers into this account
         for record in transfer_to_records:
-            balance += record.amount
+            incoming = (
+                record.transferToAmount
+                if record.transferToAmount is not None
+                else record.amount
+            )
+            balance += incoming
 
         # Get all splits where this account is specified
         splits = session.query(Split).filter(Split.accountId == accountId).all()
@@ -95,7 +119,7 @@ def get_account_balance(accountId, session=None):
                 else:
                     balance += split.amount
 
-        return round(balance, CONFIG.defaults.round_decimals)
+        return round(balance, _round_decimals())
     finally:
         if should_close:
             session.close()
@@ -114,7 +138,12 @@ def get_all_accounts(get_hidden=False):
     session = Session()
     try:
         stmt = _get_base_accounts_query(get_hidden)
-        return session.scalars(stmt).all()
+        accounts = session.scalars(stmt).all()
+        main_currency = get_main_currency()
+        for account in accounts:
+            account.currencyCode = get_account_currency(account, fallback=main_currency)
+            session.expunge(account)
+        return accounts
     finally:
         session.close()
 
@@ -133,8 +162,16 @@ def get_all_accounts_with_balance(get_hidden=False):
     try:
         stmt = _get_base_accounts_query(get_hidden)
         accounts = session.scalars(stmt).all()
+        main_currency = get_main_currency()
         for account in accounts:
+            account.currencyCode = get_account_currency(account, fallback=main_currency)
             account.balance = get_account_balance(account.id, session)
+            account.balance_main = convert_account_amount(
+                account.balance,
+                account,
+                to_currency=main_currency,
+            )
+            session.expunge(account)
         return accounts
     finally:
         session.close()
@@ -151,7 +188,11 @@ def get_account_balance_by_id(account_id):
 def get_account_by_id(account_id):
     session = Session()
     try:
-        return session.get(Account, account_id)
+        account = session.get(Account, account_id)
+        if account is not None:
+            account.currencyCode = get_account_currency(account)
+            session.expunge(account)
+        return account
     finally:
         session.close()
 
@@ -164,7 +205,9 @@ def update_account(account_id, data):
     try:
         account = session.get(Account, account_id)
         if account:
-            for key, value in data.items():
+            for key, value in _normalize_account_payload(
+                data, include_default=False
+            ).items():
                 setattr(account, key, value)
             session.commit()
             session.refresh(account)

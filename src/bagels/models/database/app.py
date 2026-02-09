@@ -5,6 +5,9 @@ import yaml
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
+from bagels.config import CONFIG
+from bagels.constants import OUTSIDE_SOURCE_ACCOUNT_NAME
+from bagels.currencies import get_default_currency_code, normalize_currency_code
 from bagels.locations import database_file
 
 # -------- create all imports -------- #
@@ -15,19 +18,28 @@ from bagels.models.person import Person  # noqa: F401
 from bagels.models.record import Record  # noqa: F401
 from bagels.models.record_template import RecordTemplate  # noqa: F401
 from bagels.models.split import Split  # noqa: F401
+from bagels.models.exchange_rate import ExchangeRate  # noqa: F401
 
 db_engine = create_engine(f"sqlite:///{database_file().resolve()}")
 Session = sessionmaker(bind=db_engine)
 
 
 def _create_outside_source_account(session):
-    outside_account = session.query(Account).filter_by(name="Outside source").first()
+    outside_account = session.query(Account).filter_by(
+        name=OUTSIDE_SOURCE_ACCOUNT_NAME
+    ).first()
     if not outside_account:
+        main_currency = (
+            normalize_currency_code(CONFIG.state.currency.main_currency)
+            if CONFIG is not None
+            else get_default_currency_code()
+        )
         outside_account = Account(
-            name="Outside source",
+            name=OUTSIDE_SOURCE_ACCOUNT_NAME,
             description="Default account for external transactions",
             beginningBalance=0.0,
             hidden=True,
+            currencyCode=main_currency,
         )
         session.add(outside_account)
         session.commit()
@@ -86,7 +98,40 @@ def _fix_dangling_categories(session):
     session.commit()
 
 
+def _sync_account_currencies(session):
+    main_currency = (
+        normalize_currency_code(CONFIG.state.currency.main_currency)
+        if CONFIG is not None
+        else get_default_currency_code()
+    )
+    accounts = session.query(Account).all()
+    updated = False
+    for account in accounts:
+        normalized = normalize_currency_code(account.currencyCode, fallback=main_currency)
+        if account.currencyCode != normalized:
+            account.currencyCode = normalized
+            session.add(account)
+            updated = True
+    if updated:
+        session.commit()
+
+
 def _sync_database_schema():
+    def _default_to_sql(column) -> str:
+        if column.default is None:
+            return ""
+        default_value = getattr(column.default, "arg", None)
+        if callable(default_value):
+            return ""
+        if default_value is None:
+            return ""
+        if isinstance(default_value, bool):
+            return f"DEFAULT {1 if default_value else 0}"
+        if isinstance(default_value, str):
+            escaped = default_value.replace("'", "''")
+            return f"DEFAULT '{escaped}'"
+        return f"DEFAULT {default_value}"
+
     try:
         inspector = inspect(db_engine)
         existing_tables = inspector.get_table_names()
@@ -108,7 +153,7 @@ def _sync_database_schema():
                                 f'ALTER TABLE {table.name} ADD COLUMN "{column_name}" '
                                 f"{column.type} "
                                 f"{'NOT NULL' if not column.nullable else ''} "
-                                f"{'DEFAULT ' + str(column.default.arg) if column.default is not None else ''}"
+                                f"{_default_to_sql(column)}"
                             )
                         )
     except Exception as e:
@@ -122,6 +167,7 @@ def init_db():
     _create_outside_source_account(session)
     _create_default_categories(session)
     _fix_dangling_categories(session)
+    _sync_account_currencies(session)
     session.close()
 
 
@@ -132,4 +178,5 @@ def wipe_database():
     session = Session()
     _create_outside_source_account(session)
     _create_default_categories(session)
+    _sync_account_currencies(session)
     session.close()

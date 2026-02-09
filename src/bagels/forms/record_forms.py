@@ -5,10 +5,12 @@ from rich.text import Text
 
 from bagels.forms.form import Form, FormField, Option, Options
 from bagels.managers.accounts import get_all_accounts_with_balance
+from bagels.managers.currency import get_main_currency
 from bagels.managers.categories import get_all_categories_by_freq
 from bagels.managers.persons import get_all_persons
 from bagels.managers.record_templates import get_record_templates
 from bagels.managers.records import get_record_by_id
+from bagels.utils.money import format_account_balance, format_amount
 
 
 class RecordForm:
@@ -129,19 +131,29 @@ class RecordForm:
                 Option(
                     text=template.label,
                     value=template.id,
-                    postfix=Text(f"{template.amount}", style="yellow"),
+                    postfix=Text(
+                        format_amount(
+                            template.amount,
+                            getattr(template.account, "currencyCode", None),
+                        ),
+                        style="yellow",
+                    ),
                 )
                 for template in templates
             ]
         )
 
         accounts = get_all_accounts_with_balance()
+        main_currency = get_main_currency()
         self.FORM.fields[3].options = Options(
             items=[
                 Option(
                     text=account.name,
                     value=account.id,
-                    postfix=Text(f"{account.balance}", style="yellow"),
+                    postfix=Text(
+                        format_account_balance(account, main_currency),
+                        style="yellow",
+                    ),
                 )
                 for account in accounts
             ]
@@ -178,7 +190,13 @@ class RecordForm:
             items=[Option(text=person.name, value=person.id) for person in people]
         )
         self.SPLIT_FORM.fields[3].options = Options(
-            items=[Option(text=account.name, value=account.id) for account in accounts]
+            items=[
+                Option(
+                    text=account.name,
+                    value=account.id,
+                )
+                for account in accounts
+            ]
         )
 
     # region Builders

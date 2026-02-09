@@ -23,8 +23,18 @@ def create_template(data):
 
 def create_template_from_record(record):
     data = {}
-    for x in ["label", "amount", "accountId", "categoryId", "isIncome"]:
-        data[x] = record[x]
+    for x in [
+        "label",
+        "amount",
+        "accountId",
+        "categoryId",
+        "isIncome",
+        "isTransfer",
+        "transferToAccountId",
+        "transferToAmount",
+    ]:
+        if x in record:
+            data[x] = record[x]
 
     return create_template(data)
 

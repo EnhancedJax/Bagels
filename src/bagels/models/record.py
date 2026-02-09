@@ -17,6 +17,10 @@ from bagels.config import CONFIG
 from .database.db import Base
 
 
+def _round_decimals() -> int:
+    return CONFIG.defaults.round_decimals if CONFIG is not None else 2
+
+
 class Record(Base):
     __tablename__ = "record"
 
@@ -45,6 +49,7 @@ class Record(Base):
         default=False,
     )
     transferToAccountId = Column(Integer, ForeignKey("account.id"), nullable=True)
+    transferToAmount = Column(Float, nullable=True)
 
     account = relationship(
         "Account", foreign_keys=[accountId], back_populates="records"
@@ -59,8 +64,8 @@ class Record(Base):
         "Split", back_populates="record", cascade="all, delete-orphan"
     )
 
-    @validates("amount")
+    @validates("amount", "transferToAmount")
     def validate_amount(self, key, value):
         if value is not None:
-            return round(value, CONFIG.defaults.round_decimals)
+            return round(value, _round_decimals())
         return value

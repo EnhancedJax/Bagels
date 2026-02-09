@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 
-from sqlalchemy import and_, column, desc, func, select
-from sqlalchemy.orm import contains_eager, sessionmaker
+from sqlalchemy import and_, func, select
+from sqlalchemy.orm import contains_eager, joinedload, sessionmaker
 
+from bagels.managers.currency import convert_account_amount, get_main_currency
 from bagels.managers.utils import get_operator_amount, get_start_end_of_period
 from bagels.models.category import Category
 from bagels.models.database.app import db_engine
@@ -118,47 +119,34 @@ def get_persons_with_net_due() -> list[Person]:
     session = Session()
     try:
         stmt = (
-            select(
-                Person,
-                (
-                    func.coalesce(
-                        select(func.sum(Split.amount))
-                        .select_from(Split)
-                        .join(Record)
-                        .where(
-                            Split.personId == Person.id,
-                            Record.isIncome == False,  # noqa: E712
-                            Split.isPaid == False,  # noqa: E712
-                        )
-                        .correlate(Person)
-                        .scalar_subquery(),
-                        0,
-                    )
-                    - func.coalesce(
-                        select(func.sum(Split.amount))
-                        .select_from(Split)
-                        .join(Record)
-                        .where(
-                            Split.personId == Person.id,
-                            Record.isIncome == True,  # noqa: E712
-                            Split.isPaid == False,  # noqa: E712
-                        )
-                        .correlate(Person)
-                        .scalar_subquery(),
-                        0,
-                    )
-                ).label("due"),
-            )
-            .select_from(Person)
+            select(Person)
             .where(Person.deletedAt.is_(None))
-            .order_by(desc(func.abs(column("due"))), Person.name)
+            .options(
+                joinedload(Person.splits)
+                .joinedload(Split.record)
+                .joinedload(Record.account)
+            )
         )
 
-        result = session.execute(stmt).all()
+        result = session.scalars(stmt).all()
         persons_with_due = []
-        for person, due in result:
-            person.due = due
+        main_currency = get_main_currency()
+        for person in result:
+            due = 0.0
+            for split in person.splits:
+                if split.isPaid or split.record is None:
+                    continue
+                split_amount = -split.amount if split.record.isIncome else split.amount
+                due += convert_account_amount(
+                    split_amount,
+                    split.record.account,
+                    to_currency=main_currency,
+                    at=split.record.date,
+                    session=session,
+                )
+            person.due = round(due, 2)
             persons_with_due.append(person)
+        persons_with_due.sort(key=lambda p: (-abs(p.due), p.name or ""))
         return persons_with_due
     finally:
         session.close()

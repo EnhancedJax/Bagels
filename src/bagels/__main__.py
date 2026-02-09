@@ -102,6 +102,23 @@ def cli(ctx, at: Path | None, migrate: str | None, source: Path | None):
             from bagels.models.database.app import init_db
 
             init_db()
+
+            # Best-effort prefetch for smoother multicurrency totals.
+            try:
+                from bagels.config import CONFIG as CURRENT_CONFIG
+                from bagels.managers.accounts import get_all_accounts
+                from bagels.managers.currency import warm_rates_for_currencies
+
+                accounts = get_all_accounts(get_hidden=True)
+                warm_rates_for_currencies(
+                    currencies=[
+                        getattr(account, "currencyCode", None) for account in accounts
+                    ],
+                    target_currency=CURRENT_CONFIG.state.currency.main_currency,
+                )
+            except Exception:
+                pass
+
             progress.update(task, advance=1, description="Starting application...")
 
             from bagels.app import App

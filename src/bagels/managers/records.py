@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import joinedload, sessionmaker
 
+from bagels.constants import OUTSIDE_SOURCE_ACCOUNT_NAME
+from bagels.managers.currency import convert_account_amount, get_main_currency
 from bagels.managers.splits import create_split, get_splits_by_record_id, update_split
 from bagels.managers.utils import get_operator_amount, get_start_end_of_period
 from bagels.models.account import Account
@@ -95,7 +97,15 @@ def get_records(
         )
 
         if account_id not in [None, ""]:
-            query = query.filter(Record.accountId == account_id)
+            query = query.filter(
+                or_(
+                    Record.accountId == account_id,
+                    and_(
+                        Record.isTransfer == True,  # noqa: E712
+                        Record.transferToAccountId == account_id,
+                    ),
+                )
+            )
         if category_piped_names not in [None, ""]:
             category_names = category_piped_names.split("|")
             query = query.join(Record.category).filter(
@@ -128,18 +138,29 @@ def _get_spending_records(session, start_date, end_date):
             Record.date < end_date,
             Record.isTransfer == False,  # noqa: E712
         )
-        .options(joinedload(Record.splits))
+        .options(joinedload(Record.splits), joinedload(Record.account))
         .all()
     )
 
 
-def _calculate_daily_spending(records, start_date, end_date, cumulative=False):
+def _calculate_daily_spending(
+    records, start_date, end_date, session, cumulative=False, convert_to_main=True
+):
     """Calculate daily spending with optional cumulative sum"""
     daily_spending = {}
+    main_currency = get_main_currency()
     for record in records:
         date_key = record.date.date()
         splits_sum = sum(split.amount for split in record.splits)
         actual_spend = record.amount - splits_sum
+        if convert_to_main:
+            actual_spend = convert_account_amount(
+                actual_spend,
+                record.account,
+                to_currency=main_currency,
+                at=record.date,
+                session=session,
+            )
         daily_spending[date_key] = daily_spending.get(date_key, 0) + actual_spend
 
     current_date = start_date.date()
@@ -161,13 +182,65 @@ def _calculate_daily_spending(records, start_date, end_date, cumulative=False):
     return result
 
 
+def _convert_to_main_currency(amount, account, main_currency, at, session):
+    return convert_account_amount(
+        amount,
+        account,
+        to_currency=main_currency,
+        at=at,
+        session=session,
+    )
+
+
+def _get_transfer_incoming_amount(record):
+    return record.transferToAmount if record.transferToAmount is not None else record.amount
+
+
+def _calculate_transfer_effect(record, main_currency, session):
+    source_effect = -_convert_to_main_currency(
+        record.amount, record.account, main_currency, record.date, session
+    )
+    destination_effect = _convert_to_main_currency(
+        _get_transfer_incoming_amount(record),
+        record.transferToAccount,
+        main_currency,
+        record.date,
+        session,
+    )
+
+    if (
+        record.transferToAccount
+        and record.transferToAccount.name == OUTSIDE_SOURCE_ACCOUNT_NAME
+    ):
+        return source_effect
+    if record.account and record.account.name == OUTSIDE_SOURCE_ACCOUNT_NAME:
+        return destination_effect
+    return source_effect + destination_effect
+
+
+def _calculate_record_effect(record, main_currency, session):
+    split_total = sum(split.amount for split in record.splits)
+    record_effect = (
+        record.amount - split_total if record.isIncome else -record.amount + split_total
+    )
+    return _convert_to_main_currency(
+        record_effect, record.account, main_currency, record.date, session
+    )
+
+
+def _adjust_balance_for_record(record, main_currency, session):
+    if record.isTransfer:
+        return _calculate_transfer_effect(record, main_currency, session)
+    return _calculate_record_effect(record, main_currency, session)
+
+
 def get_spending(start_date, end_date) -> list[float]:
     """Gets a list of spent amounts for each day in the period, less split amounts of the records"""
     session = Session()
     try:
         records = _get_spending_records(session, start_date, end_date)
         return _calculate_daily_spending(
-            records, start_date, end_date, cumulative=False
+            records, start_date, end_date, session=session, cumulative=False
         )
     finally:
         session.close()
@@ -178,7 +251,9 @@ def get_spending_trend(start_date, end_date) -> list[float]:
     session = Session()
     try:
         records = _get_spending_records(session, start_date, end_date)
-        return _calculate_daily_spending(records, start_date, end_date, cumulative=True)
+        return _calculate_daily_spending(
+            records, start_date, end_date, session=session, cumulative=True
+        )
     finally:
         session.close()
 
@@ -194,21 +269,20 @@ def is_record_all_splits_paid(record_id: int):
 
 def get_daily_balance(start_date, end_date) -> list[float]:
     """Gets a list of account balances for each day in the period"""
-    # Calculating net beginning balance
-
-    # Handle records up till start_date, then process each day one by one.
-
-    # Records.isIncome ? add : subtract
-
-    # for Record.splits => Record.isIncome ? subtract Split.amount : add Split.amount
-
-    # Record.isTransfer ? Record.transferToAccount.name == "Outside source" ? subtract : Record.account.name == "Outside source" ? add : ignore
-
-    # return result
     session = Session()
     try:
+        main_currency = get_main_currency()
         accounts = session.query(Account).filter(Account.deletedAt.is_(None)).all()
-        total_balance = sum(a.beginningBalance for a in accounts)
+        total_balance = sum(
+            convert_account_amount(
+                a.beginningBalance,
+                a,
+                to_currency=main_currency,
+                at=start_date,
+                session=session,
+            )
+            for a in accounts
+        )
         old_records = (
             session.query(Record)
             .filter(
@@ -222,19 +296,8 @@ def get_daily_balance(start_date, end_date) -> list[float]:
             .all()
         )
 
-        def adjust_balance(r):
-            if r.isTransfer:
-                if r.transferToAccount and r.transferToAccount.name == "Outside source":
-                    return -r.amount
-                if r.account and r.account.name == "Outside source":
-                    return r.amount
-                return 0
-            if r.isIncome:
-                return r.amount - sum(s.amount for s in r.splits)
-            return -r.amount + sum(s.amount for s in r.splits)
-
         for rec in old_records:
-            total_balance += adjust_balance(rec)
+            total_balance += _adjust_balance_for_record(rec, main_currency, session)
 
         results = []
         current = start_date
@@ -255,7 +318,10 @@ def get_daily_balance(start_date, end_date) -> list[float]:
                 )
                 .all()
             )
-            day_effect = sum(adjust_balance(dr) for dr in day_records)
+            day_effect = sum(
+                _adjust_balance_for_record(dr, main_currency, session)
+                for dr in day_records
+            )
             total_balance += day_effect
             results.append(total_balance)
             current += timedelta(days=1)

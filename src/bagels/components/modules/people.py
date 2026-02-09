@@ -6,6 +6,7 @@ from bagels.components.datatable import DataTable
 from bagels.components.indicators import EmptyIndicator
 from bagels.config import CONFIG
 from bagels.forms.person_forms import PersonForm
+from bagels.managers.currency import get_main_currency
 from bagels.managers.persons import (
     delete_person,
     get_person_by_id,
@@ -14,6 +15,7 @@ from bagels.managers.persons import (
 )
 from bagels.modals.confirmation import ConfirmationModal
 from bagels.modals.input import InputModal
+from bagels.utils.money import format_amount
 
 
 class People(Static):
@@ -54,9 +56,14 @@ class People(Static):
             table.add_columns(*self.COLUMNS)
 
         people = get_persons_with_net_due()
+        main_currency = get_main_currency()
         if people:
             for person in people:
-                table.add_row(person.name, person.due, key=person.id)
+                table.add_row(
+                    person.name,
+                    format_amount(person.due, main_currency),
+                    key=person.id,
+                )
             table.zebra_stripes = True
 
         empty_indicator.display = not people

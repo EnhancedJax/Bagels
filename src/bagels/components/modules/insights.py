@@ -4,11 +4,14 @@ from textual.widgets import Label, Static
 
 from bagels.components.percentage_bar import PercentageBar, PercentageBarItem
 from bagels.config import CONFIG
+from bagels.managers.accounts import get_account_by_id
 from bagels.managers.categories import get_all_categories_records
+from bagels.managers.currency import get_main_currency
 from bagels.managers.utils import (
     get_period_average,
     get_period_figures,
 )
+from bagels.utils.money import format_amount
 
 
 class Insights(Static):
@@ -45,6 +48,11 @@ class Insights(Static):
 
         mode_isIncome = self.page_parent.mode["isIncome"]
         label = "Income" if mode_isIncome else "Expense"
+        display_currency = get_main_currency()
+        if self.use_account and self.page_parent.mode["accountId"]["default_value"] is not None:
+            account = get_account_by_id(self.page_parent.mode["accountId"]["default_value"])
+            if account is not None:
+                display_currency = account.currencyCode
 
         if self.use_account:
             current_filter_label.update(
@@ -76,8 +84,8 @@ class Insights(Static):
             offset=self.page_parent.filter["offset"],
             offset_type=self.page_parent.filter["offset_type"],
         )
-        period_net_label.update(str(period_net))
-        period_average_label.update(str(period_average))
+        period_net_label.update(format_amount(period_net, display_currency))
+        period_average_label.update(format_amount(period_average, display_currency))
 
         return period_net
 

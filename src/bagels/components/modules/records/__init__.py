@@ -36,7 +36,7 @@ Records .label-highlight-match {
         (CONFIG.hotkeys.new, "new", "Add"),
         (CONFIG.hotkeys.delete, "delete", "Delete"),
         (CONFIG.hotkeys.edit, "edit", "Edit"),
-        (CONFIG.hotkeys.home.new_transfer, "new_transfer", "Transfer"),
+        (CONFIG.hotkeys.home.new_transfer, "new_transfer", "Transfer/Exchange"),
         (CONFIG.hotkeys.home.toggle_splits, "toggle_splits", "Toggle Splits"),
         Binding(
             CONFIG.hotkeys.home.display_by_person,

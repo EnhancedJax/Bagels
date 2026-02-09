@@ -5,6 +5,7 @@ from rich.text import Text
 
 from bagels.forms.form import Form, FormField, Option, Options
 from bagels.managers.record_templates import get_transfer_templates
+from bagels.utils.money import format_amount
 from bagels.models.record import Record
 
 
@@ -38,6 +39,14 @@ class TransferForm:
                 is_required=True,
             ),
             FormField(
+                title="Destination Amount",
+                key="transferToAmount",
+                type="number",
+                placeholder="0.00 (required for cross-currency)",
+                min=0,
+                is_required=False,
+            ),
+            FormField(
                 title="Date",
                 key="date",
                 type="dateAutoDay",
@@ -63,6 +72,14 @@ class TransferForm:
                 min=0,
                 is_required=True,
             ),
+            FormField(
+                title="Destination Amount",
+                key="transferToAmount",
+                type="number",
+                placeholder="0.00 (required for cross-currency)",
+                min=0,
+                is_required=False,
+            ),
         ]
     )
 
@@ -83,12 +100,18 @@ class TransferForm:
                 Option(
                     text=template.label,
                     value=template.id,
-                    postfix=Text(f"{template.amount}", style="yellow"),
+                    postfix=Text(
+                        format_amount(
+                            template.amount,
+                            getattr(template.account, "currencyCode", None),
+                        ),
+                        style="yellow",
+                    ),
                 )
                 for template in templates
             ]
         )
-        self.FORM.fields[2].default_value = self.defaultDate
+        self.FORM.fields[3].default_value = self.defaultDate
 
     # region Builders
     # ------------- Builders ------------- #

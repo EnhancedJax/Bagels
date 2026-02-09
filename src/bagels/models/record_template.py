@@ -20,6 +20,10 @@ from bagels.config import CONFIG
 from .database.db import Base
 
 
+def _round_decimals() -> int:
+    return CONFIG.defaults.round_decimals if CONFIG is not None else 2
+
+
 class RecordTemplate(Base):
     __tablename__ = "record_template"
 
@@ -44,6 +48,7 @@ class RecordTemplate(Base):
         default=False,
     )
     transferToAccountId = Column(Integer, ForeignKey("account.id"), nullable=True)
+    transferToAmount = Column(Float, nullable=True)
 
     account = relationship("Account", foreign_keys=[accountId])
     category = relationship("Category", foreign_keys=[categoryId])
@@ -59,6 +64,7 @@ class RecordTemplate(Base):
             "isIncome": self.isIncome,
             "isTransfer": self.isTransfer,
             "transferToAccountId": self.transferToAccountId,
+            "transferToAmount": self.transferToAmount,
         }
 
     @validates("order")
@@ -67,10 +73,10 @@ class RecordTemplate(Base):
             raise ValueError("Order cannot be null.")
         return order
 
-    @validates("amount")
+    @validates("amount", "transferToAmount")
     def validate_amount(self, key, value):
         if value is not None:
-            return round(value, CONFIG.defaults.round_decimals)
+            return round(value, _round_decimals())
         return value
 
 

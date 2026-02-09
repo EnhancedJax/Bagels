@@ -3,11 +3,13 @@ accounts:
   - name: Bank
     description: ""
     beginningBalance: 5000.00
+    currencyCode: PLN
     repaymentDate: null
 
   - name: Card
     description: ""
     beginningBalance: 100
+    currencyCode: USD
     repaymentDate: null
 
 # Sample people for splits

@@ -5,8 +5,14 @@ import warnings
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from bagels.currencies import (
+    SUPPORTED_CURRENCIES,
+    get_default_currency_code,
+    is_supported_currency,
+    normalize_currency_code,
+)
 from bagels.locations import config_file
 
 
@@ -97,11 +103,27 @@ class BudgetingStates(BaseModel):
     )
 
 
+class CurrencyState(BaseModel):
+    main_currency: str = get_default_currency_code()
+    fx_provider: Literal["frankfurter"] = "frankfurter"
+    refresh_hours: int = Field(default=24, ge=1, le=168)
+
+    @field_validator("main_currency")
+    @classmethod
+    def validate_main_currency(cls, value: str) -> str:
+        if not is_supported_currency(value):
+            raise ValueError(
+                f"Unsupported currency '{value}'. Use one of: {', '.join(sorted(SUPPORTED_CURRENCIES.keys()))}"
+            )
+        return normalize_currency_code(value)
+
+
 class State(BaseModel):
     theme: str = "tokyo-night"
     check_for_updates: bool = True
     footer_visibility: bool = True
     budgeting: BudgetingStates = BudgetingStates()
+    currency: CurrencyState = CurrencyState()
 
 
 class Config(BaseModel):
@@ -188,7 +210,12 @@ class ConfigurationError(Exception):
     pass
 
 
-CONFIG = None
+CONFIG: Config = Config.model_construct(
+    hotkeys=Hotkeys(),
+    symbols=Symbols(),
+    defaults=Defaults(),
+    state=State(),
+)
 
 
 def open_config_file():
@@ -212,11 +239,15 @@ def load_config():
         except OSError:
             pass
 
-    global CONFIG
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            CONFIG = Config()  # ignore warnings about empty env file
+            loaded_config = Config()  # ignore warnings about empty env file
+            # Keep object identity stable so modules importing CONFIG stay synced.
+            CONFIG.hotkeys = loaded_config.hotkeys
+            CONFIG.symbols = loaded_config.symbols
+            CONFIG.defaults = loaded_config.defaults
+            CONFIG.state = loaded_config.state
     except ConfigurationError as e:
         print("\nConfiguration Error:")
         print("==================")
@@ -257,8 +288,7 @@ def write_state(key: str, value: Any) -> None:
     with open(config_file(), "w") as f:
         yaml.dump(config, f, default_flow_style=False)
 
-    # update the global config object
-    global CONFIG
+    # update the in-memory config object
     d = CONFIG.state
     for k in keys[:-1]:
         d = getattr(d, k)

@@ -2,15 +2,25 @@ import re
 from datetime import datetime, timedelta
 from functools import lru_cache
 
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import joinedload, sessionmaker
 from textual.widget import Widget
 
 from bagels.config import CONFIG
+from bagels.managers.currency import convert_account_amount, get_main_currency
 from bagels.models.category import Category
 from bagels.models.database.app import db_engine
 from bagels.models.record import Record
 
 Session = sessionmaker(bind=db_engine)
+
+
+def _round_decimals() -> int:
+    return CONFIG.defaults.round_decimals if CONFIG is not None else 2
+
+
+def _first_day_of_week() -> int:
+    return CONFIG.defaults.first_day_of_week if CONFIG is not None else 6
+
 
 # --------------- query -------------- #
 
@@ -56,7 +66,7 @@ def _get_start_end_of_week(offset: int = 0):
     now = datetime.now()
     # Apply offset in weeks
     now = now + timedelta(weeks=offset)
-    first_day_of_week = CONFIG.defaults.first_day_of_week
+    first_day_of_week = _first_day_of_week()
     start_of_week = (
         now - timedelta(days=(now.weekday() - first_day_of_week) % 7)
     ).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -121,7 +131,7 @@ def get_period_figures(
         should_close = False
 
     try:
-        query = session.query(Record)
+        query = session.query(Record).options(joinedload(Record.account))
 
         # Filter by account if specified
         if accountId is not None:
@@ -143,6 +153,8 @@ def get_period_figures(
         # Calculate net amount
         total = 0
         records = query.all()
+        main_currency = get_main_currency()
+        use_global_conversion = accountId is None
 
         for record in records:
             # Skip records that are marked as transfers if filtering by income type
@@ -156,6 +168,14 @@ def get_period_figures(
             # Calculate amount after subtracting splits
             split_total = sum(split.amount for split in record.splits)
             record_amount = record.amount - split_total
+            if use_global_conversion:
+                record_amount = convert_account_amount(
+                    record_amount,
+                    record.account,
+                    to_currency=main_currency,
+                    at=record.date,
+                    session=session,
+                )
 
             if not record.isTransfer:
                 # For regular income/expenses
@@ -164,7 +184,7 @@ def get_period_figures(
                 else:
                     total -= record_amount
 
-        return abs(round(total, CONFIG.defaults.round_decimals))
+        return abs(round(total, _round_decimals()))
     finally:
         if should_close:
             session.close()
@@ -182,7 +202,7 @@ def _get_days_in_period(offset: int = 0, offset_type: str = "month"):
 
 def get_period_average(net: int = 0, offset: int = 0, offset_type: str = "month"):
     days = _get_days_in_period(offset, offset_type)
-    return round(net / days, CONFIG.defaults.round_decimals)
+    return round(net / days, _round_decimals())
 
 
 # region filter process

@@ -257,7 +257,7 @@ class RecordCUD:
 
         self.app.push_screen(
             TransferModal(
-                title="New transfer",
+                title="New transfer / exchange",
                 defaultDate=self.page_parent.mode["date"].strftime("%d"),
             ),
             callback=check_result,

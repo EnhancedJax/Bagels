@@ -5,6 +5,7 @@ from rich.text import Text
 from bagels.components.datatable import DataTable
 from bagels.components.indicators import EmptyIndicator
 from bagels.config import CONFIG
+from bagels.managers.currency import convert_account_amount, get_main_currency
 from bagels.managers.persons import (
     get_persons_with_splits,
 )
@@ -13,6 +14,7 @@ from bagels.managers.records import (
     get_records,
 )
 from bagels.utils.format import format_date_to_readable
+from bagels.utils.money import format_account_name, format_amount
 
 
 class DisplayMode:
@@ -163,32 +165,55 @@ class RecordTableBuilder:
 
     def _format_record_fields(self, record, flow_icon: str) -> tuple[str, str]:
         if record.isTransfer:
+            from_currency = getattr(record.account, "currencyCode", None)
+            to_currency = getattr(record.transferToAccount, "currencyCode", None)
+            from_account_name = format_account_name(record.account)
+            to_account_name = format_account_name(record.transferToAccount)
             from_account = (
-                "[italic]" + record.account.name + "[/italic]"
+                f"[italic]{from_account_name}[/italic]"
                 if record.account.hidden
-                else record.account.name
+                else from_account_name
             )
             to_account = (
-                "[italic]" + record.transferToAccount.name + "[/italic]"
+                f"[italic]{to_account_name}[/italic]"
                 if record.transferToAccount.hidden
-                else record.transferToAccount.name
+                else to_account_name
             )
-            category_string = f"{from_account} → {to_account}"
-            amount_string = record.amount
+            if (
+                from_currency is not None
+                and to_currency is not None
+                and from_currency != to_currency
+            ):
+                category_string = f"[cyan]Exchange[/cyan] {from_account} → {to_account}"
+            else:
+                category_string = f"{from_account} → {to_account}"
+            if (
+                record.transferToAmount is not None
+                and from_currency is not None
+                and to_currency is not None
+                and from_currency != to_currency
+            ):
+                amount_string = (
+                    f"{format_amount(record.amount, from_currency)}"
+                    f" → {format_amount(record.transferToAmount, to_currency)}"
+                )
+            else:
+                amount_string = format_amount(record.amount, from_currency)
             account_string = "-"
         else:
             color_tag = record.category.color.lower()
             category_string = f"[{color_tag}]{CONFIG.symbols.category_color}[/{color_tag}] {record.category.name}"
+            account_currency = getattr(record.account, "currencyCode", None)
 
             if record.splits and not self.show_splits:
                 amount_self = round(
                     record.amount - get_record_total_split_amount(record.id), 2
                 )
-                amount_string = f"{flow_icon} {amount_self}"
+                amount_string = f"{flow_icon} {format_amount(amount_self, account_currency)}"
             else:
-                amount_string = f"{flow_icon} {record.amount}"
+                amount_string = f"{flow_icon} {format_amount(record.amount, account_currency)}"
 
-            account_string = record.account.name
+            account_string = format_account_name(record.account)
 
         return category_string, amount_string, account_string
 
@@ -199,6 +224,7 @@ class RecordTableBuilder:
 
     def _add_split_rows(self, table: DataTable, record, flow_icon: str) -> None:
         color = record.category.color.lower()
+        account_currency = getattr(record.account, "currencyCode", None)
         amount_self = round(
             record.amount - get_record_total_split_amount(record.id),
             CONFIG.defaults.round_decimals,
@@ -222,9 +248,13 @@ class RecordTableBuilder:
             table.add_row(
                 " ",
                 f"{line_char} {paid_status_icon} {split.person.name}",
-                f"{split_flow_icon} {split.amount}",
+                f"{split_flow_icon} {format_amount(split.amount, account_currency)}",
                 date_string,
-                split.account.name if split.account else "-",
+                (
+                    format_account_name(split.account)
+                    if split.account
+                    else "-"
+                ),
                 key=f"s-{str(split.id)}",
             )
 
@@ -232,7 +262,7 @@ class RecordTableBuilder:
         table.add_row(
             "",
             f"{finish_line_char} Self total",
-            f"= {amount_self}",
+            f"= {format_amount(amount_self, account_currency)}",
             "",
             "",
             style_name="net",
@@ -270,8 +300,10 @@ class RecordTableBuilder:
 
                 # Add splits for this person
                 total_unpaid = 0  # Initialize total unpaid amount for this person
+                main_currency = get_main_currency()
                 for split in person.splits:
                     record = split.record
+                    record_currency = getattr(record.account, "currencyCode", main_currency)
                     paid_icon = (
                         f"[green]{CONFIG.symbols.split_paid}[/green]"
                         if split.isPaid
@@ -290,14 +322,23 @@ class RecordTableBuilder:
                         split_amount = split.amount
                         if record.isIncome:
                             split_amount = -split_amount  # Negate income amounts
-                        total_unpaid += split_amount
+                        total_unpaid += convert_account_amount(
+                            split_amount,
+                            record.account,
+                            to_currency=main_currency,
+                            at=record.date,
+                        )
 
                     amount = (
-                        f"[red]{CONFIG.symbols.amount_negative}[/red] {split.amount}"
+                        f"[red]{CONFIG.symbols.amount_negative}[/red] {format_amount(split.amount, record_currency)}"
                         if record.isIncome
-                        else f"[green]{CONFIG.symbols.amount_positive}[/green] {split.amount}"
+                        else f"[green]{CONFIG.symbols.amount_positive}[/green] {format_amount(split.amount, record_currency)}"
                     )
-                    account = f"→ {split.account.name}" if split.account else "-"
+                    account = (
+                        f"→ {format_account_name(split.account)}"
+                        if split.account
+                        else "-"
+                    )
 
                     label_string = self._get_label_string(record.label)
 
@@ -314,11 +355,11 @@ class RecordTableBuilder:
 
                 # Add total row for this person showing unpaid amount. We reverse the color indicator.
                 if total_unpaid == 0:
-                    total_display = "0.0"
+                    total_display = format_amount(0, main_currency)
                 elif total_unpaid < 0:
-                    total_display = f"[green]{abs(total_unpaid)}[/green]"
+                    total_display = f"[green]{format_amount(abs(total_unpaid), main_currency)}[/green]"
                 else:
-                    total_display = f"[red]{abs(total_unpaid)}[/red]"
+                    total_display = f"[red]{format_amount(abs(total_unpaid), main_currency)}[/red]"
                 table.add_row(
                     " ",
                     "[bold]Total Unpaid[/bold]",

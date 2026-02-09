@@ -4,6 +4,7 @@ from rich.text import Text
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import joinedload, sessionmaker
 
+from bagels.managers.currency import convert_account_amount, get_main_currency
 from bagels.managers.utils import get_start_end_of_period
 from bagels.models.category import Category
 from bagels.models.database.app import db_engine
@@ -17,7 +18,7 @@ def get_categories_count():
     """Count all categories excluding deleted ones."""
     session = Session()
     try:
-        stmt = select(Category)
+        stmt = select(Category).filter(Category.deletedAt.is_(None))
         return len(session.scalars(stmt).all())
     finally:
         session.close()
@@ -106,7 +107,7 @@ def get_all_categories_records(
     try:
         start_of_period, end_of_period = get_start_end_of_period(offset, offset_type)
 
-        stmt = select(Record).options(joinedload(Record.category))
+        stmt = select(Record).options(joinedload(Record.category), joinedload(Record.account))
         if account_id is not None:
             stmt = stmt.filter(Record.accountId == account_id)
         stmt = stmt.filter(
@@ -117,9 +118,19 @@ def get_all_categories_records(
 
         category_totals = {}
         records = session.scalars(stmt).all()
+        main_currency = get_main_currency()
+        use_global_conversion = account_id is None
         for record in records:
             split_total = sum(split.amount for split in record.splits)
             record_amount = record.amount - split_total
+            if use_global_conversion:
+                record_amount = convert_account_amount(
+                    record_amount,
+                    record.account,
+                    to_currency=main_currency,
+                    at=record.date,
+                    session=session,
+                )
 
             if record.category is None:
                 continue

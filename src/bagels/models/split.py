@@ -8,6 +8,10 @@ from bagels.config import CONFIG
 from .database.db import Base
 
 
+def _round_decimals() -> int:
+    return CONFIG.defaults.round_decimals if CONFIG is not None else 2
+
+
 class Split(Base):
     __tablename__ = "split"
 
@@ -33,5 +37,5 @@ class Split(Base):
     @validates("amount")
     def validate_amount(self, key, value):
         if value is not None:
-            return round(value, CONFIG.defaults.round_decimals)
+            return round(value, _round_decimals())
         return value

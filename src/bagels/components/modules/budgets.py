@@ -3,6 +3,7 @@ from textual.containers import Container, Horizontal
 from textual.widgets import Button, Input, Label, Static
 
 from bagels.config import CONFIG, write_state
+from bagels.managers.currency import get_main_currency
 from bagels.managers.utils import (
     dynamic_cache,
     get_income_to_use,
@@ -10,6 +11,7 @@ from bagels.managers.utils import (
     try_method_query_one,
 )
 from bagels.models.category import Nature
+from bagels.utils.money import format_amount
 
 
 class Budgets(Static):
@@ -113,6 +115,7 @@ class Budgets(Static):
 
     def _rebuild_income_bar(self) -> None:
         offset = self.page_parent.offset
+        main_currency = get_main_currency()
         net_income = dynamic_cache(get_income_to_use, offset)
         net_expenses = dynamic_cache(
             get_period_figures, isIncome=False, offset=offset, offset_type="month"
@@ -179,16 +182,16 @@ class Budgets(Static):
         row2.styles.grid_columns = f"{p_expenses}% 1fr"
 
         label_spent_amount = income_bar_container.query_one("#label-spent-amount")
-        label_spent_amount.update(str(net_expenses))
+        label_spent_amount.update(format_amount(net_expenses, main_currency))
         label_save_amount = income_bar_container.query_one("#label-save-amount")
-        label_save_amount.update(str(amount_to_save))
+        label_save_amount.update(format_amount(amount_to_save, main_currency))
         label_remaining_amount = income_bar_container.query_one(
             "#label-remaining-amount"
         )
         remaining = round(
             net_income - net_expenses - amount_to_save, CONFIG.defaults.round_decimals
         )
-        label_remaining_amount.update(str(remaining))
+        label_remaining_amount.update(format_amount(remaining, main_currency))
 
         row3 = income_bar_container.query_one("#row-3")
         row3.display = not not net_expenses  # only display if there are expenses
@@ -213,11 +216,13 @@ class Budgets(Static):
 
             row3.styles.grid_columns = f"{p_must}% {p_need}% 1fr"
             label_spent_must_amount = row3.query_one("#label-spent-must-amount")
-            label_spent_must_amount.update(str(expenses_must))
+            label_spent_must_amount.update(format_amount(expenses_must, main_currency))
             label_spent_need_amount = row3.query_one("#label-spent-need-amount")
-            label_spent_need_amount.update(str(expenses_need))
+            label_spent_need_amount.update(format_amount(expenses_need, main_currency))
             label_spent_want_amount = row3.query_one("#label-want-remaining-amount")
-            label_spent_want_amount.update(f"{str(expenses_want)} / {str(want_quota)}")
+            label_spent_want_amount.update(
+                f"{format_amount(expenses_want, main_currency)} / {format_amount(want_quota, main_currency)}"
+            )
 
             row5.styles.width = f"{p_tospend}%"
             bar_want_quota = row5.query_one("#bar-must-quota")

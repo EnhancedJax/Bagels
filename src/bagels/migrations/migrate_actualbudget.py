@@ -1,6 +1,8 @@
 import sqlite3
 from datetime import datetime
 
+from bagels.currencies import get_default_currency_code
+
 
 def convert_date(date_str):
     """Convert YYYYMMDD to datetime with time set to 12:00 PM"""
@@ -60,8 +62,8 @@ class BudgetToBagelsMigration:
             self.bagels_cur.execute(
                 """
                 INSERT INTO account (createdAt, updatedAt, name, description, 
-                                   beginningBalance, hidden)
-                VALUES (?, ?, ?, ?, ?, ?)
+                                   beginningBalance, hidden, currencyCode)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     datetime.now(),
@@ -70,6 +72,7 @@ class BudgetToBagelsMigration:
                     description,
                     balance_float,
                     bool(offbudget or closed),
+                    get_default_currency_code(),
                 ),
             )
 
